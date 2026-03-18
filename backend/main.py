@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import pandas as pd
+import shutil
 from datetime import datetime, timedelta
 from typing import Optional, List
 from dotenv import load_dotenv
@@ -14,6 +15,8 @@ from pydantic import BaseModel
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from google import genai
+from google.genai import types
+import time
 import database
 
 load_dotenv()
@@ -26,7 +29,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 24 hours
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 
-app = FastAPI(title="Handwritten to Excel Converter")
+app = FastAPI(title="Om Screen Printing - Data Extraction System")
 database.init_db()
 
 # --- Models ---
@@ -80,7 +83,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     user = database.get_user_by_username(username)
     if user is None:
         raise credentials_exception
-    return user
+    # Convert dict to User model for type safety
+    return User(id=user["id"], username=user["username"])
 
 # --- Middleware ---
 
@@ -129,87 +133,136 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 @app.post("/api/convert")
 async def convert_image_to_excel(
-    file: UploadFile = File(...),
+    files: List[UploadFile] = File(...),
     api_key: Optional[str] = Form(None),
-    current_user: dict = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
-    key = api_key or os.environ.get("GEMINI_API_KEY")
-    if not key:
-        raise HTTPException(status_code=400, detail="Gemini API Key is required.")
-
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Uploaded file must be an image.")
-
-    try:
+    if len(files) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 files allowed.")
+    
+    all_extracted_data = []
+    original_filenames = [f.filename for f in files]
+    primary_filename = original_filenames[0]
+    rate_limit_hit = False
+    
+    # Initialize client (prefer provided key, then env)
+    effective_api_key = api_key or os.getenv("GEMINI_API_KEY")
+    if not effective_api_key:
+        raise HTTPException(status_code=400, detail="Gemini API key is missing.")
+    
+    client = genai.Client(api_key=effective_api_key)
+    
+    for file in files:
         file_id = str(uuid.uuid4())
-        image_ext = file.filename.split(".")[-1]
-        image_path = os.path.join(TEMP_DIR, f"{file_id}.{image_ext}")
-        excel_path = os.path.join(TEMP_DIR, f"{file_id}.xlsx")
+        extension = file.filename.split('.')[-1]
+        temp_path = os.path.join(TEMP_DIR, f"{file_id}.{extension}")
         
-        content = await file.read()
-        with open(image_path, "wb") as f:
-            f.write(content)
-
-        client = genai.Client(api_key=key)
-        gemini_file = client.files.upload(file=image_path)
-
-        prompt = (
-            "You are a highly capable data extraction AI. "
-            "Please analyze the provided image. "
-            "If the image DOES NOT contain structured tabular data, return EXACTLY the following JSON: {\"error\": \"Image does not contain structured tabular data.\"} "
-            "If it DOES contain structured tabular data, extract all text while preserving the exact row and column structure. "
-            "Return the data strictly as a valid JSON array of objects. "
-            "The keys of each object should be the column headers detected (e.g., 'S.No', 'Name', 'Salary', 'Date'). "
-            "If there are no explicit headers, generate sensible ones like 'Column1', 'Column2', etc. "
-            "Do not include any Markdown formatting like ```json ... ```, just pure JSON data."
-        )
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[gemini_file, prompt],
-            config={"temperature": 0.1}
-        )
-        client.files.delete(name=gemini_file.name)
-
-        response_text = response.text.replace("```json", "").replace("```", "").strip()
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
         
         try:
-            data = json.loads(response_text)
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=500, detail=f"Failed to parse AI output into JSON.")
+            # Prepare image for Gemini
+            with open(temp_path, "rb") as f:
+                image_data = f.read()
+            
+            # Gemini Prompt for Table Extraction
+            prompt = """
+            Analyze the attached image and extract all tabular data.
+            Return the data ONLY as a JSON list of objects, where each object represents a row.
+            Use the column headers found in the image as keys.
+            If no headers are clear, use 'Column1', 'Column2', etc.
+            Ensure every row in the table is captured.
+            Do not include any explanation, markdown formatting, or text outside the JSON list.
+            """
+            
+            # Retry Logic for Gemini API
+            max_retries = 3
+            retry_count = 0
+            backoff_time = 2  # Initial backoff in seconds
+            extracted_data = None
+            
+            while retry_count <= max_retries:
+                try:
+                    response = client.models.generate_content(
+                        model="gemini-2.0-flash",
+                        contents=[
+                            prompt,
+                            types.Part.from_bytes(data=image_data, mime_type=file.content_type)
+                        ]
+                    )
+                    
+                    content = response.text.strip()
+                    # Clean possible markdown formatting
+                    if content.startswith("```json"):
+                        content = content[7:-3].strip()
+                    elif content.startswith("```"):
+                        content = content[3:-3].strip()
+                    
+                    extracted_data = json.loads(content)
+                    break # Success!
+                    
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    if "429" in error_msg or "resource_exhausted" in error_msg:
+                        rate_limit_hit = True
+                        retry_count += 1
+                        if retry_count > max_retries:
+                            print(f"Max retries reached for {file.filename} due to rate limits.")
+                            raise # Re-raise to be caught by the outer loop's exception handler
+                        
+                        print(f"Rate limit hit for {file.filename}. Retrying in {backoff_time}s... (Attempt {retry_count}/{max_retries})")
+                        time.sleep(backoff_time)
+                        backoff_time *= 2 # Exponential backoff
+                    else:
+                        print(f"Error during Gemini API call for {file.filename}: {e}")
+                        raise # Re-raise other errors
+            
+            if extracted_data and isinstance(extracted_data, list):
+                # Add a 'Source File' column to distinguish data
+                for row in extracted_data:
+                    row["_source"] = file.filename
+                all_extracted_data.extend(extracted_data)
+            
+        except Exception as e:
+            print(f"Error processing {file.filename}: {e}")
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                rate_limit_hit = True
+            continue # Skip failed files but continue batch
+            
+    if not all_extracted_data:
+        if rate_limit_hit:
+            raise HTTPException(status_code=429, detail="Gemini API rate limit exceeded. Please wait a minute and try again.")
+        raise HTTPException(status_code=500, detail="Failed to extract data from any of the uploaded images.")
 
-        if isinstance(data, dict) and "error" in data:
-            raise HTTPException(status_code=400, detail=data["error"])
-
-        if not data or not isinstance(data, list):
-            raise HTTPException(status_code=500, detail="AI output is not in a standard table format.")
-
-        df = pd.DataFrame(data)
-        for col in df.columns:
-            if df[col].dtype == 'object':
-                df[col] = df[col].apply(lambda x: x.title() if isinstance(x, str) else x)
-
-        excel_filename = f"converted_data_{file_id[:8]}.xlsx"
-        df.to_excel(excel_path, index=False)
-        
-        database.add_conversion(file_id, current_user["id"], file.filename, excel_filename, json.dumps(data))
-
-        return {"id": file_id, "data": data, "filename": file.filename}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # Save to database
+    db_id = str(uuid.uuid4())
+    excel_filename = f"converted_data_{db_id[:8]}.xlsx"
+    
+    # Pre-generate the Excel file for immediate download availability
+    excel_path = os.path.join(TEMP_DIR, f"{db_id}.xlsx")
+    df = pd.DataFrame(all_extracted_data)
+    df.to_excel(excel_path, index=False)
+    
+    database.add_conversion(db_id, current_user.id, primary_filename, excel_filename, json.dumps(all_extracted_data))
+    
+    return {
+        "id": db_id,
+        "filename": primary_filename,
+        "data": all_extracted_data,
+        "count": len(files)
+    }
 
 @app.get("/api/history")
-async def get_history(current_user: dict = Depends(get_current_user)):
+async def get_history(current_user: User = Depends(get_current_user)):
     try:
-        return database.get_all_conversions(current_user["id"])
+        return database.get_all_conversions(current_user.id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/preview/{file_id}")
-async def get_preview(file_id: str, current_user: dict = Depends(get_current_user)):
+async def get_preview(file_id: str, current_user: User = Depends(get_current_user)):
     record = database.get_conversion(file_id)
-    if not record or record["user_id"] != current_user["id"]:
+    if not record or record["user_id"] != current_user.id:
         raise HTTPException(status_code=404, detail="Conversion not found")
     
     return {
@@ -219,9 +272,9 @@ async def get_preview(file_id: str, current_user: dict = Depends(get_current_use
     }
 
 @app.post("/api/save/{file_id}")
-async def save_changes(file_id: str, payload: SaveData, current_user: dict = Depends(get_current_user)):
+async def save_changes(file_id: str, payload: SaveData, current_user: User = Depends(get_current_user)):
     record = database.get_conversion(file_id)
-    if not record or record["user_id"] != current_user["id"]:
+    if not record or record["user_id"] != current_user.id:
         raise HTTPException(status_code=404, detail="Conversion not found")
     
     database.update_conversion_data(file_id, json.dumps(payload.data))
@@ -236,9 +289,9 @@ async def save_changes(file_id: str, payload: SaveData, current_user: dict = Dep
     return {"status": "success", "message": "Changes saved"}
 
 @app.get("/api/download/{file_id}")
-async def download_file(file_id: str, current_user: dict = Depends(get_current_user)):
+async def download_file(file_id: str, current_user: User = Depends(get_current_user)):
     record = database.get_conversion(file_id)
-    if not record or record["user_id"] != current_user["id"]:
+    if not record or record["user_id"] != current_user.id:
         raise HTTPException(status_code=404, detail="Record not found")
 
     excel_path = os.path.join(TEMP_DIR, f"{file_id}.xlsx")
@@ -253,5 +306,5 @@ async def download_file(file_id: str, current_user: dict = Depends(get_current_u
     return FileResponse(
         excel_path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename=record["excel_filename"]
+        filename=f"converted_{record['original_filename'].split('.')[0]}.xlsx"
     )

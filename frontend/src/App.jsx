@@ -6,8 +6,8 @@ function App() {
   const [history, setHistory] = useState([]);
   const [isFetchingHistory, setIsFetchingHistory] = useState(false);
 
-  const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState(null);
+  const [files, setFiles] = useState([]);
+  const [previews, setPreviews] = useState([]);
   const [apiKey, setApiKey] = useState('');
   const [isDragActive, setIsDragActive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -37,6 +37,7 @@ function App() {
     "Extracting text from rows...",
     "Identifying columns...",
     "Formatting table data...",
+    "Processing batch files...",
     "Almost there..."
   ];
 
@@ -149,23 +150,37 @@ function App() {
     setPreviewData(null);
   };
 
-  const processFile = (selectedFile) => {
-    if (!selectedFile.type.startsWith('image/')) {
-      setError('Please upload a valid image file.');
+  const processFiles = (selectedFiles) => {
+    const newFiles = Array.from(selectedFiles).filter(file => file.type.startsWith('image/'));
+
+    if (files.length + newFiles.length > 10) {
+      setError('Maximum 10 files allowed.');
       return;
     }
+
     setError(null);
-    setFile(selectedFile);
-    const reader = new FileReader();
-    reader.onload = (e) => setPreview(e.target.result);
-    reader.readAsDataURL(selectedFile);
+    const updatedFiles = [...files, ...newFiles];
+    setFiles(updatedFiles);
+
+    newFiles.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => setPreviews(prev => [...prev, e.target.result]);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeFile = (index) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+    setPreviews(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleUpload = async () => {
-    if (!file) { setError('Please select a file first.'); return; }
+    if (files.length === 0) { setError('Please select at least one file.'); return; }
     setIsLoading(true); setError(null);
     const formData = new FormData();
-    formData.append('file', file);
+    files.forEach(file => {
+      formData.append('files', file);
+    });
     if (apiKey) formData.append('api_key', apiKey);
 
     try {
@@ -178,6 +193,9 @@ function App() {
       if (!response.ok) {
         const errData = await response.json();
         if (response.status === 401) handleLogout();
+        if (response.status === 429) {
+          throw new Error("Rate limit exceeded. Please wait about a minute before trying again.");
+        }
         throw new Error(errData.detail || 'Conversion failed.');
       }
 
@@ -322,9 +340,9 @@ function App() {
 
             <button
               type="submit" disabled={isLoading}
-              className="w-full btn-primary font-bold py-4 rounded-2xl shadow-xl text-white text-lg mt-4 relative overflow-hidden group"
+              className="w-full btn-primary font-bold py-4 rounded-2xl shadow-xl text-white text-lg mt-4"
             >
-              <span className="relative z-10">{isLoading ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Sign Up')}</span>
+              {isLoading ? 'Processing...' : (authMode === 'login' ? 'Login' : 'Sign Up')}
             </button>
           </form>
 
@@ -376,7 +394,7 @@ function App() {
               <div className="space-y-8">
                 <div>
                   <h2 className="text-5xl font-black text-white leading-tight mb-4">Digitize your records <br /> <span className="text-gradient">instantly.</span></h2>
-                  <p className="text-slate-400 text-lg leading-relaxed max-w-lg">Advanced AI-powered extraction for handwritten tables. Upload your image and get perfect Excel results in seconds.</p>
+                  <p className="text-slate-400 text-lg leading-relaxed max-w-lg">Advanced AI-powered extraction for batch handwritten tables. Upload up to 10 images at once.</p>
                 </div>
 
                 <div className="glass-panel rounded-3xl p-6">
@@ -387,39 +405,51 @@ function App() {
 
               <div className="glass-panel rounded-[2rem] p-4">
                 <div
-                  className={`border-2 border-dashed rounded-[1.5rem] p-10 flex flex-col items-center justify-center transition-all min-h-[400px] cursor-pointer ${isDragActive ? 'border-orange-500 bg-orange-500/10' : 'border-slate-800 bg-slate-900/30 hover:bg-slate-900/50'}`}
-                  onDragOver={e => { e.preventDefault(); setIsDragActive(true); }} onDragLeave={() => setIsDragActive(false)} onDrop={e => { e.preventDefault(); setIsDragActive(false); processFile(e.dataTransfer.files[0]); }} onClick={() => !preview && fileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-[1.5rem] p-6 flex flex-col items-center justify-center transition-all min-h-[300px] cursor-pointer ${isDragActive ? 'border-orange-500 bg-orange-500/10' : 'border-slate-800 bg-slate-900/30 hover:bg-slate-900/50'}`}
+                  onDragOver={e => { e.preventDefault(); setIsDragActive(true); }} onDragLeave={() => setIsDragActive(false)} onDrop={e => { e.preventDefault(); setIsDragActive(false); processFiles(e.dataTransfer.files); }} onClick={() => fileInputRef.current?.click()}
                 >
-                  <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={e => processFile(e.target.files[0])} />
-                  {preview ? (
-                    <div className="relative group w-full flex justify-center">
-                      <img src={preview} alt="Preview" className="max-h-[400px] w-auto rounded-2xl border border-slate-700 shadow-2xl" />
-                      <button onClick={e => { e.stopPropagation(); setFile(null); setPreview(null); }} className="absolute top-4 right-4 bg-red-500 text-white p-3 rounded-2xl shadow-xl transform scale-90 opacity-0 group-hover:opacity-100 group-hover:scale-100 transition-all hover:bg-red-600">
-                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                      </button>
+                  <input type="file" ref={fileInputRef} className="hidden" accept="image/*" multiple onChange={e => processFiles(e.target.files)} />
+
+                  {previews.length > 0 ? (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-4 w-full">
+                      {previews.map((src, i) => (
+                        <div key={i} className="relative group aspect-square">
+                          <img src={src} alt={`Preview ${i}`} className="w-full h-full object-cover rounded-xl border border-slate-700 shadow-md" />
+                          <button onClick={e => { e.stopPropagation(); removeFile(i); }} className="absolute -top-2 -right-2 bg-red-500 text-white p-1.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        </div>
+                      ))}
+                      {previews.length < 10 && (
+                        <div className="flex items-center justify-center aspect-square border-2 border-dashed border-slate-700 rounded-xl hover:border-orange-500/50 transition-colors">
+                          <svg className="h-8 w-8 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="text-center group">
                       <div className="bg-slate-800/80 rounded-3xl p-6 inline-block mb-6 text-orange-500 group-hover:scale-110 transition-transform duration-500 ring-1 ring-slate-700/50">
                         <svg className="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                       </div>
-                      <h3 className="text-2xl font-bold text-white mb-3">Drop your image here</h3>
-                      <p className="text-slate-500 font-medium">Click to select files (JPG, PNG)</p>
+                      <h3 className="text-2xl font-bold text-white mb-3">Drop files here (Max 10)</h3>
+                      <p className="text-slate-500 font-medium tracking-wide">Or click to browse</p>
                     </div>
                   )}
                 </div>
 
+                {error && <div className="mt-4 bg-red-500/10 border border-red-500/20 text-red-400 text-sm py-2 px-4 rounded-xl text-center">{error}</div>}
+
                 <div className="mt-6">
                   <button
-                    onClick={handleUpload} disabled={!file || isLoading}
-                    className={`w-full py-5 rounded-2xl font-black text-lg flex items-center justify-center transition-all ${!file || isLoading ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'btn-primary text-white'}`}
+                    onClick={handleUpload} disabled={files.length === 0 || isLoading}
+                    className={`w-full py-5 rounded-2xl font-black text-lg flex items-center justify-center transition-all ${files.length === 0 || isLoading ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'btn-primary text-white shadow-orange-500/20 shadow-lg'}`}
                   >
                     {isLoading ? (
                       <div className="flex items-center space-x-3">
                         <svg className="animate-spin h-6 w-6" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                        <span>{loadingMessage || 'Converting...'}</span>
+                        <span>{loadingMessage || 'Converting Batch...'}</span>
                       </div>
-                    ) : 'Convert to Excel'}
+                    ) : `Extract Data from ${files.length} File${files.length === 1 ? '' : 's'}`}
                   </button>
                 </div>
               </div>
@@ -427,13 +457,13 @@ function App() {
           )}
 
           {activeTab === 'history' && !previewData && (
-            <div className="glass-panel rounded-[2.5rem] p-10 animate-in fade-in slide-in-from-bottom-8 duration-500">
+            <div className="glass-panel rounded-[2.5rem] p-10">
               <div className="flex justify-between items-end mb-10">
                 <div>
                   <h2 className="text-4xl font-black text-white mb-2">My History</h2>
                   <p className="text-slate-500">Access and edit your previous extractions.</p>
                 </div>
-                <div className="text-6xl font-black text-white/5 select-none pointer-events-none">OM RECORDS</div>
+                <div className="hidden sm:block text-6xl font-black text-white/5 select-none pointer-events-none">OM RECORDS</div>
               </div>
 
               {isFetchingHistory ? (
@@ -470,15 +500,15 @@ function App() {
           )}
 
           {previewData && (
-            <div className="glass-panel p-10 rounded-[3rem] animate-in fade-in zoom-in-95 duration-500">
+            <div className="glass-panel p-10 rounded-[3rem]">
               <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
                 <div className="flex items-center space-x-6">
-                  <button onClick={() => { setActiveTab(originalTab); setPreviewData(null); }} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 hover:text-white transition-all hover:bg-slate-800 shadow-xl">
-                    <svg className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                  <button onClick={() => { setActiveTab(originalTab); setPreviewData(null); setFiles([]); setPreviews([]); }} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 hover:text-white transition-all hover:bg-slate-800 shadow-xl">
+                    <svg className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M12.707 5.293a1 1 0 110 1.414L9.414 10l3.293 3.293a1 1 0 11-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 111.414 0z" clipRule="evenodd" /></svg>
                   </button>
                   <div>
-                    <h2 className="text-3xl font-black text-white mb-1">Preview & Correct</h2>
-                    <p className="text-slate-500 font-medium">Verify extraction accuracy before downloading.</p>
+                    <h2 className="text-3xl font-black text-white mb-1">Batch Result</h2>
+                    <p className="text-slate-500 font-medium">Extracted data from up to 10 files combined.</p>
                   </div>
                 </div>
                 <div className="flex space-x-4">
