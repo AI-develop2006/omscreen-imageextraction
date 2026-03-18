@@ -1,0 +1,26 @@
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Temporary and Build Files
+temp_files/
+build/
+.DS_Store
+*.log
+.vscode/
+.idea/
