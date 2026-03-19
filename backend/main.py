@@ -8,7 +8,8 @@ from typing import Optional, List
 from dotenv import load_dotenv
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
@@ -324,3 +325,22 @@ async def download_file(file_id: str, current_user: User = Depends(get_current_u
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=f"converted_{record['original_filename'].split('.')[0]}.xlsx"
     )
+
+# --- Static Files & SPA Routing ---
+
+# Mount the static files directory (built by the Docker build stage)
+if os.path.exists("static"):
+    app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")
+
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    # If the request is for an API route that doesn't exist, let it fall through or handle here
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="API endpoint not found")
+    
+    # Otherwise, serve index.html for SPA routing
+    index_path = os.path.join("static", "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    
+    return HTMLResponse(content="<h1>Frontend not built</h1><p>Please run the build stage.</p>", status_code=404)

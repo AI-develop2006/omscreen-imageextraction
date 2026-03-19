@@ -1,12 +1,9 @@
 services:
-  # --- Backend (FastAPI) ---
+  # --- Single Dockerized App (Full Stack) ---
   - type: web
-    name: omscreen-backend
-    runtime: python
+    name: omscreen-excel
+    runtime: docker
     region: oregon
-    buildCommand: pip install -r backend/requirements.txt
-    # Start command needs the backend directory in the path
-    startCommand: cd backend && gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app
     envVars:
       - key: DATABASE_URL
         sync: false # Must be provided manually from Supabase
@@ -15,18 +12,4 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: FRONTEND_URL
-        sync: false # Update this after frontend is live
-
-  # --- Frontend (React) ---
-  - type: web
-    name: omscreen-excel-conversion
-    runtime: static
-    region: oregon
-    buildCommand: cd frontend && npm install && npm run build
-    publishDir: frontend/dist
-    envVars:
-      - key: VITE_API_URL
-        fromService:
-          name: omscreen-backend
-          type: web
-          property: host
+        value: "https://omscreen-excel.onrender.com" # Default assuming this name
