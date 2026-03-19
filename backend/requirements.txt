@@ -1,12 +1,20 @@
+# Web Server
 fastapi
 uvicorn
 gunicorn
-python-multipart
-pandas
-openpyxl
-google-genai
-pydantic
-python-dotenv
+
+# Security & Auth
 python-jose[cryptography]
 passlib[bcrypt]
-bcrypt==3.2.0
+bcrypt>=4.0.1
+python-multipart
+python-dotenv
+
+# AI & Data
+google-genai
+pydantic
+pandas
+openpyxl
+
+# Database (Optional but Recommended for Railway/Postgres)
+psycopg2-binary

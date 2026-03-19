@@ -21,6 +21,15 @@ import database
 
 load_dotenv()
 
+# --- Config & Singletons ---
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
+# Initialize Gemini Client as a singleton
+genai_client = None
+if GEMINI_API_KEY:
+    genai_client = genai.Client(api_key=GEMINI_API_KEY)
+
 # Security Configuration
 SECRET_KEY = os.environ.get("SECRET_KEY", "your-secret-key-change-this-in-production")
 ALGORITHM = "HS256"
@@ -29,8 +38,13 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 24 hours
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 
-app = FastAPI(title="Om Screen Printing - Data Extraction System")
+app = FastAPI(title="Handwritten to Excel - Production API")
 database.init_db()
+
+# --- Health Check ---
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 
 # --- Models ---
 
@@ -90,7 +104,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[FRONTEND_URL],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],
@@ -145,12 +160,13 @@ async def convert_image_to_excel(
     primary_filename = original_filenames[0]
     rate_limit_hit = False
     
-    # Initialize client (prefer provided key, then env)
-    effective_api_key = api_key or os.getenv("GEMINI_API_KEY")
-    if not effective_api_key:
-        raise HTTPException(status_code=400, detail="Gemini API key is missing.")
+    # Initialize client (prefer provided key, then singleton)
+    client = genai_client
+    if api_key:
+        client = genai.Client(api_key=api_key)
     
-    client = genai.Client(api_key=effective_api_key)
+    if not client:
+        raise HTTPException(status_code=400, detail="Gemini API key is missing.")
     
     for file in files:
         file_id = str(uuid.uuid4())
