@@ -16,5 +16,5 @@ pydantic
 pandas
 openpyxl
 
-# Database (Optional but Recommended for Railway/Postgres)
+# Database
 psycopg2-binary
