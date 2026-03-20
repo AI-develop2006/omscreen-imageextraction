@@ -34,5 +34,6 @@ COPY --from=build-stage /app/frontend/dist ./static
 EXPOSE 8000
 
 # Start command
-# We use gunicorn with uvicorn workers for production
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "main:app", "--bind", "0.0.0.0:8000"]
+# We use the PORT environment variable (defaulting to 8000)
+# This is better for Render as it assigns a dynamic port
+CMD ["sh", "-c", "gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:${PORT:-8000}"]

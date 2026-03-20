@@ -326,15 +326,23 @@ async def download_file(file_id: str, current_user: User = Depends(get_current_u
         filename=f"converted_{record['original_filename'].split('.')[0]}.xlsx"
     )
 
-# --- Static Files & SPA Routing ---
-
 # Mount the static files directory (built by the Docker build stage)
 if os.path.exists("static"):
+    print("Static directory found. Mounting /assets...")
     app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")
+else:
+    print("WARNING: Static directory not found!")
+
+@app.get("/")
+async def serve_index():
+    index_path = os.path.join("static", "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return HTMLResponse(content="<h1>Frontend not built</h1><p>Expected index.html at /app/static/index.html</p>", status_code=404)
 
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
-    # If the request is for an API route that doesn't exist, let it fall through or handle here
+    # If the request is for an API route that doesn't exist, return 404
     if full_path.startswith("api/"):
         raise HTTPException(status_code=404, detail="API endpoint not found")
     
@@ -343,4 +351,4 @@ async def serve_spa(full_path: str):
     if os.path.exists(index_path):
         return FileResponse(index_path)
     
-    return HTMLResponse(content="<h1>Frontend not built</h1><p>Please run the build stage.</p>", status_code=404)
+    return HTMLResponse(content="<h1>Not Found</h1><p>The requested resource could not be found.</p>", status_code=404)
