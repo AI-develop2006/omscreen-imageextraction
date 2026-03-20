@@ -1,3 +1,4 @@
+# Cache Bust: 2026-03-20-10-30
 # --- Stage 1: Build the React Frontend ---
 FROM node:20-alpine AS build-stage
 WORKDIR /app/frontend
