@@ -295,7 +295,7 @@ function App() {
               <img src={logo} alt="Om Screen Printing Logo" className="h-28 w-auto relative z-10 logo-glow" />
             </div>
             <h2 className="text-4xl font-black text-gradient tracking-tight text-center">
-              Om Screen Printing <span className="text-xs font-bold text-slate-500 opacity-50 ml-1 italic">v1.0</span>
+              Om Screen Printing <span className="text-sm font-black text-orange-500 ml-1 italic animate-pulse">v1.0</span>
             </h2>
             <p className="text-slate-400 mt-2 font-semibold tracking-[0.2em] uppercase text-sm">Data Extraction System</p>
           </div>
@@ -372,7 +372,7 @@ function App() {
             </div>
             <div>
               <h1 className="text-2xl font-black text-gradient uppercase tracking-tight">
-                Om Screen Printing <span className="text-[10px] font-bold text-slate-500 opacity-50 ml-1 lowercase italic">v1.0</span>
+                Om Screen Printing <span className="text-[10px] font-black text-orange-500 ml-1 lowercase italic">v1.0</span>
               </h1>
               <p className="text-[10px] text-slate-500 font-bold tracking-[0.3em] uppercase opacity-80">Data Extraction</p>
             </div>

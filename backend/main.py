@@ -40,6 +40,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 
 app = FastAPI(title="Handwritten to Excel - Production API")
+print("🚀 SERVER STARTING: Version 1.0 (Fixing 500 Errors)")
 database.init_db()
 
 # --- Health Check ---
