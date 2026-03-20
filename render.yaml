@@ -2,6 +2,7 @@ services:
   # --- Single Dockerized App (Full Stack) ---
   - type: web
     name: omscreen-excel
+    plan: free
     runtime: docker
     region: oregon
     envVars:
