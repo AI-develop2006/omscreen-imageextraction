@@ -24,40 +24,52 @@ def get_connection():
         raise
 
 def init_db():
-    conn = get_connection()
-    c = conn.cursor()
-    # Users table
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            username TEXT UNIQUE,
-            hashed_password TEXT
-        )
-    ''')
-    # Conversions table
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS conversions (
-            id TEXT PRIMARY KEY,
-            user_id TEXT,
-            original_filename TEXT,
-            excel_filename TEXT,
-            created_at TEXT,
-            data TEXT,
-            FOREIGN KEY (user_id) REFERENCES users (id)
-        )
-    ''')
-    # Migration: Add data and user_id columns if they don't exist (SQLite only, Postgres should be initialized correctly)
-    if not DATABASE_URL:
-        try:
-            c.execute("ALTER TABLE conversions ADD COLUMN data TEXT")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            c.execute("ALTER TABLE conversions ADD COLUMN user_id TEXT")
-        except sqlite3.OperationalError:
-            pass
-    conn.commit()
-    conn.close()
+    if DATABASE_URL:
+        print("DATABASE: Detected DATABASE_URL environment variable. Connecting to PostgreSQL (Supabase)...")
+    else:
+        print("DATABASE WARNING: DATABASE_URL not found! Using local SQLite database (conversions.db).")
+    
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        # Users table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                username TEXT UNIQUE,
+                hashed_password TEXT
+            )
+        ''')
+        # Conversions table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS conversions (
+                id TEXT PRIMARY KEY,
+                user_id TEXT,
+                original_filename TEXT,
+                excel_filename TEXT,
+                created_at TEXT,
+                data TEXT,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        ''')
+        # Migration: Add data and user_id columns if they don't exist (SQLite only, Postgres should be initialized correctly)
+        if not DATABASE_URL:
+            try:
+                c.execute("ALTER TABLE conversions ADD COLUMN data TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                c.execute("ALTER TABLE conversions ADD COLUMN user_id TEXT")
+            except sqlite3.OperationalError:
+                pass
+        conn.commit()
+        print("DATABASE: Initialization successful (Table schemas verified).")
+        conn.close()
+    except Exception as e:
+        print(f"DATABASE INITIALIZATION ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 def add_user(user_id: str, username: str, hashed_password: str):
     conn = get_connection()
