@@ -12,16 +12,14 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 P = "%s" if DATABASE_URL else "?"
 
 def get_connection():
-    if DATABASE_URL:
-        result = urlparse(DATABASE_URL)
-        return psycopg2.connect(
-            database=result.path[1:],
-            user=result.username,
-            password=result.password,
-            host=result.hostname,
-            port=result.port
-        )
-    return sqlite3.connect(DB_FILE)
+    try:
+        if DATABASE_URL:
+            # Use the URL directly for psycopg2, it's more robust than manual parsing
+            return psycopg2.connect(DATABASE_URL)
+        return sqlite3.connect(DB_FILE)
+    except Exception as e:
+        print(f"DATABASE CONNECTION ERROR: {e}")
+        raise
 
 def init_db():
     conn = get_connection()
