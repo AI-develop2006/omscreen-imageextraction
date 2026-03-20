@@ -19,6 +19,8 @@ def get_connection():
         return sqlite3.connect(DB_FILE)
     except Exception as e:
         print(f"DATABASE CONNECTION ERROR: {e}")
+        import traceback
+        traceback.print_exc()
         raise
 
 def init_db():
