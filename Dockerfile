@@ -2,7 +2,7 @@
 FROM node:20-alpine AS build-stage
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 COPY frontend/ ./
 # We can set the API URL to be relative since they are in the same container
 ENV VITE_API_URL=""
