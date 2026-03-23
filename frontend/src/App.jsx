@@ -48,9 +48,13 @@ function App() {
       const response = await fetch(`${apiUrl}/api/history`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      
       if (response.ok) {
-        const data = await response.json();
-        setHistory(data);
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await response.json();
+          setHistory(data);
+        }
       } else if (response.status === 401) {
         handleLogout();
       }
@@ -98,8 +102,14 @@ function App() {
       });
 
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.detail || 'Login failed');
+        let errorMsg = 'Login failed';
+        try {
+          const err = await response.json();
+          errorMsg = err.detail || errorMsg;
+        } catch (e) {
+          errorMsg = `Server error: ${response.statusText || response.status}`;
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await response.json();
@@ -128,8 +138,14 @@ function App() {
       });
 
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.detail || 'Signup failed');
+        let errorMsg = 'Signup failed';
+        try {
+          const err = await response.json();
+          errorMsg = err.detail || errorMsg;
+        } catch (e) {
+          errorMsg = `Server error: ${response.statusText || response.status}`;
+        }
+        throw new Error(errorMsg);
       }
 
       alert("Account created! Please login.");
@@ -191,12 +207,20 @@ function App() {
       });
 
       if (!response.ok) {
-        const errData = await response.json();
         if (response.status === 401) handleLogout();
-        if (response.status === 429) {
-          throw new Error("Rate limit exceeded. Please wait about a minute before trying again.");
+        
+        let errorMsg = 'Conversion failed.';
+        try {
+          const errData = await response.json();
+          if (response.status === 429) {
+            errorMsg = "Rate limit exceeded. Please wait about a minute before trying again.";
+          } else {
+            errorMsg = errData.detail || errorMsg;
+          }
+        } catch (e) {
+          errorMsg = `Server error: ${response.statusText || response.status}`;
         }
-        throw new Error(errData.detail || 'Conversion failed.');
+        throw new Error(errorMsg);
       }
 
       const result = await response.json();
@@ -220,7 +244,14 @@ function App() {
       });
       if (!response.ok) {
         if (response.status === 401) handleLogout();
-        throw new Error("Failed to load preview");
+        let errorMsg = 'Failed to load preview';
+        try {
+          const err = await response.json();
+          errorMsg = err.detail || errorMsg;
+        } catch (e) {
+          errorMsg = `Server error: ${response.statusText || response.status}`;
+        }
+        throw new Error(errorMsg);
       }
 
       const result = await response.json();
@@ -254,7 +285,16 @@ function App() {
         },
         body: JSON.stringify({ data: previewData }),
       });
-      if (!response.ok) throw new Error("Save failed");
+      if (!response.ok) {
+        let errorMsg = 'Save failed';
+        try {
+          const err = await response.json();
+          errorMsg = err.detail || errorMsg;
+        } catch (e) {
+          errorMsg = `Server error: ${response.statusText || response.status}`;
+        }
+        throw new Error(errorMsg);
+      }
       alert("Saved!");
     } catch (err) {
       alert(err.message);
@@ -268,7 +308,16 @@ function App() {
       const response = await fetch(`${apiUrl}/api/download/${previewId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (!response.ok) throw new Error("Download failed");
+      if (!response.ok) {
+        let errorMsg = 'Download failed';
+        try {
+          const err = await response.json();
+          errorMsg = err.detail || errorMsg;
+        } catch (e) {
+          errorMsg = `Server error: ${response.statusText || response.status}`;
+        }
+        throw new Error(errorMsg);
+      }
       const blob = await response.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');

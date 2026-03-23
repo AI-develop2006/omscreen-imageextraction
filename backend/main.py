@@ -19,6 +19,11 @@ from google import genai
 from google.genai import types
 import time
 import database
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("uvicorn.error")
 
 load_dotenv()
 
@@ -40,8 +45,39 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 
 app = FastAPI(title="Handwritten to Excel - Production API")
-print("🚀 SERVER STARTING: Version 1.0 (Fixing 500 Errors)")
-database.init_db()
+
+# --- Startup Cleanup & Security Check ---
+@app.on_event("startup")
+async def startup_event():
+    logger.info("🚀 SERVER STARTING: Version 1.1 (Production Ready)")
+    
+    # 1. Security Check
+    if not os.environ.get("SECRET_KEY"):
+        logger.warning("⚠️ WARNING: SECRET_KEY not found in environment! Using insecure default. For production, set SECRET_KEY.")
+    
+    # 2. Database Init
+    database.init_db()
+    
+    # 3. Cleanup Old Temp Files
+    cleanup_temp_files()
+
+def cleanup_temp_files():
+    """Delete files in TEMP_DIR older than 24 hours."""
+    now = time.time()
+    cutoff = now - (24 * 3600)
+    count = 0
+    if os.path.exists(TEMP_DIR):
+        for filename in os.listdir(TEMP_DIR):
+            file_path = os.path.join(TEMP_DIR, filename)
+            if os.path.isfile(file_path):
+                if os.path.getmtime(file_path) < cutoff:
+                    try:
+                        os.remove(file_path)
+                        count += 1
+                    except Exception as e:
+                        logger.error(f"Error deleting {file_path}: {e}")
+    if count > 0:
+        logger.info(f"🧹 CLEANUP: Removed {count} old temporary files.")
 
 # --- Health Check ---
 @app.get("/health")
@@ -202,7 +238,7 @@ async def convert_image_to_excel(
             while retry_count <= max_retries:
                 try:
                     response = client.models.generate_content(
-                        model="gemini-2.0-flash",
+                        model="gemini-3.0-flash",
                         contents=[
                             prompt,
                             types.Part.from_bytes(data=image_data, mime_type=file.content_type)

@@ -1,19 +1,24 @@
 import sqlite3
 import os
-import psycopg2
-import psycopg2.extras
 from datetime import datetime
 from urllib.parse import urlparse
+
+try:
+    import psycopg2
+    import psycopg2.extras
+    PSYCOPG2_AVAILABLE = True
+except ImportError:
+    PSYCOPG2_AVAILABLE = False
 
 DB_FILE = "conversions.db"
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # Determine placeholder style
-P = "%s" if DATABASE_URL else "?"
+P = "%s" if DATABASE_URL and PSYCOPG2_AVAILABLE else "?"
 
 def get_connection():
     try:
-        if DATABASE_URL:
+        if DATABASE_URL and PSYCOPG2_AVAILABLE:
             # Use the URL directly for psycopg2, it's more robust than manual parsing
             return psycopg2.connect(DATABASE_URL)
         return sqlite3.connect(DB_FILE)
@@ -24,8 +29,10 @@ def get_connection():
         raise
 
 def init_db():
-    if DATABASE_URL:
+    if DATABASE_URL and PSYCOPG2_AVAILABLE:
         print("DATABASE: Detected DATABASE_URL environment variable. Connecting to PostgreSQL (Supabase)...")
+    elif DATABASE_URL and not PSYCOPG2_AVAILABLE:
+        print("DATABASE WARNING: DATABASE_URL found but psycopg2 is not installed! Falling back to local SQLite.")
     else:
         print("DATABASE WARNING: DATABASE_URL not found! Using local SQLite database (conversions.db).")
     
@@ -81,7 +88,7 @@ def add_user(user_id: str, username: str, hashed_password: str):
 def get_user_by_username(username: str):
     conn = get_connection()
     # row_factory replacement for psycopg2
-    if DATABASE_URL:
+    if DATABASE_URL and PSYCOPG2_AVAILABLE:
         c = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     else:
         conn.row_factory = sqlite3.Row
@@ -104,7 +111,7 @@ def add_conversion(file_id: str, user_id: str, original_filename: str, excel_fil
 
 def get_conversion(file_id: str):
     conn = get_connection()
-    if DATABASE_URL:
+    if DATABASE_URL and PSYCOPG2_AVAILABLE:
         c = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     else:
         conn.row_factory = sqlite3.Row
@@ -126,7 +133,7 @@ def update_conversion_data(file_id: str, data_json: str):
 
 def get_all_conversions(user_id: str):
     conn = get_connection()
-    if DATABASE_URL:
+    if DATABASE_URL and PSYCOPG2_AVAILABLE:
         c = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     else:
         conn.row_factory = sqlite3.Row
